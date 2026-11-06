@@ -2,6 +2,7 @@
 
 #include <QFileSystemWatcher>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QUrl>
 #include <QVariantList>
@@ -28,6 +29,9 @@ class Backend : public QObject {
     Q_PROPERTY(QString themeAccent READ themeAccent NOTIFY themeAccentChanged)
     Q_PROPERTY(QString themeAccentForeground READ themeAccentForeground NOTIFY themeAccentChanged)
     Q_PROPERTY(QObject *timeline READ timeline CONSTANT)
+    // Bumped whenever a video's frame times arrive, so bindings on
+    // frameCounter() update.
+    Q_PROPERTY(int frameTimesRevision READ frameTimesRevision NOTIFY frameTimesChanged)
 
 public:
     explicit Backend(ThumbProvider *provider, QObject *parent = nullptr);
@@ -79,6 +83,10 @@ public:
     Q_INVOKABLE void saveFrame(double t);
     // Resolve the adjacent displayed frame without blocking the UI.
     Q_INVOKABLE void stepFrame(double t, int direction);
+    // "N / total" frames of the edit at t, 1-based, or "" until every
+    // clip's frame times are known.
+    Q_INVOKABLE QString frameCounter(double t);
+    int frameTimesRevision() const { return m_frameTimesRevision; }
 
     // Write the clips to dst. A non-zero scaleHeight downscales the shorter
     // side to that size.
@@ -89,6 +97,7 @@ public:
     static QList<int> exportHeights(int width, int height);
 
 signals:
+    void frameTimesChanged();
     void infoChanged();
     void videosChanged();
     void busyChanged();
@@ -162,6 +171,9 @@ private:
     int m_batchSkipped = 0;
     bool m_savingFrame = false;
     bool m_steppingFrame = false;
+    int m_frameTimesRevision = 0;
+    QSet<int> m_frameTimesLoading;
+    void loadFrameTimes(int thumbKey, const QString &path, double start);
     // The hidden file a frame is being written to, until it's renamed.
     QString m_framePart;
     QString m_status;
