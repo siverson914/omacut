@@ -867,13 +867,8 @@ ApplicationWindow {
             Label {
                 anchors.centerIn: parent
                 visible: win.statusText === "" && timeline.duration > 0 && !editBar.trimming
-                // Reads the clips and revision so it updates on edits and once
-                // frame times arrive.
-                readonly property string frameCount: timeline.clips && backend.frameTimesRevision >= 0
-                    ? backend.frameCounter(editBar.playheadSec) : ""
                 textFormat: Text.StyledText
                 text: Format.fmt(editBar.playheadSec) + " (" + Format.fmt(win.timeline.duration) + ")"
-                    + (frameCount !== "" ? " · " + frameCount : "")
                     + (editBar.zoomed ? " · <font color=\"" + win.accent + "\">zoomed</font>" : "")
                 color: "#d6d6da"
                 font.pixelSize: 13

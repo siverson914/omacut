@@ -130,7 +130,6 @@ class ShortcutBackend : public QObject {
     Q_PROPERTY(QString themeAccent READ themeAccent NOTIFY themeAccentChanged)
     Q_PROPERTY(QString themeAccentForeground READ themeAccentForeground NOTIFY themeAccentChanged)
     Q_PROPERTY(QObject *timeline READ timelineObject CONSTANT)
-    Q_PROPERTY(int frameTimesRevision READ frameTimesRevision CONSTANT)
 
 public:
     explicit ShortcutBackend(QUrl source, double duration, QObject *parent = nullptr)
@@ -148,8 +147,6 @@ public:
     QString themeAccent() const { return QStringLiteral("#FFD60A"); }
     QString themeAccentForeground() const { return QStringLiteral("black"); }
     QObject *timelineObject() { return &timeline; }
-    int frameTimesRevision() const { return 0; }
-    Q_INVOKABLE QString frameCounter(double) const { return {}; }
 
     Q_INVOKABLE bool load(const QUrl &) { return false; }
     Q_INVOKABLE void openVideoDialog() { ++openCount; }
@@ -284,7 +281,6 @@ private slots:
     void exportClipWritesMp4();
     void frameStepsFollowPresentationTimes();
     void frameStepFailuresHaveTheirOwnNotice();
-    void frameCounterCountsTheEditsFrames();
     void saveFrameWritesPngBesideTheSource();
     void saveFrameSquaresStretchedPixels();
     void shownFrameIsTheLastToStartByThen();
@@ -802,39 +798,6 @@ void BackendTests::frameStepsFollowPresentationTimes() {
     backend.timeline()->split(0.4004);
     step(0.4004, -1, 0.4);
     step(0.4, -1, 0.1);
-}
-
-void BackendTests::frameCounterCountsTheEditsFrames() {
-    const QString path = m_dir.filePath(QStringLiteral("count-vfr.mkv"));
-    QProcess proc;
-    proc.start(QStandardPaths::findExecutable(QStringLiteral("ffmpeg")), {
-        "-v", "error", "-f", "lavfi", "-i", "testsrc=size=32x32:rate=10:duration=1",
-        "-vf", "select='eq(n,0)+eq(n,1)+eq(n,4)+eq(n,8)'",
-        "-fps_mode", "vfr", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-y", path
-    });
-    QVERIFY(proc.waitForFinished(10000));
-    QCOMPARE(proc.exitCode(), 0);
-    ThumbProvider provider;
-    Backend backend(&provider, new FakeFilePicker);
-    QVERIFY(backend.load(QUrl::fromLocalFile(path)));
-    waitForProbe(backend);
-    // Blank until the frame times, read on first ask, arrive.
-    QCOMPARE(backend.frameCounter(0), QString());
-    QTRY_VERIFY_WITH_TIMEOUT(backend.frameTimesRevision() > 0, 10000);
-    // Frames start at 0, 0.1, 0.4 and 0.8.
-    QCOMPARE(backend.frameCounter(0), QStringLiteral("1 / 4"));
-    QCOMPARE(backend.frameCounter(0.39), QStringLiteral("2 / 4"));
-    QCOMPARE(backend.frameCounter(0.4), QStringLiteral("3 / 4"));
-    QCOMPARE(backend.frameCounter(backend.timeline()->duration()), QStringLiteral("4 / 4"));
-    // A trimmed clip opens on the frame shown at its in point.
-    backend.timeline()->setClip(0, 0.2, backend.timeline()->duration());
-    QCOMPARE(backend.frameCounter(0), QStringLiteral("1 / 3"));
-    QCOMPARE(backend.frameCounter(0.2), QStringLiteral("2 / 3"));
-    // Clips count on after each other (split where the 0.4 frame starts).
-    backend.timeline()->split(0.2);
-    QCOMPARE(backend.frameCounter(0.1), QStringLiteral("1 / 3"));
-    QCOMPARE(backend.frameCounter(0.25), QStringLiteral("2 / 3"));
-    QCOMPARE(backend.frameCounter(0.65), QStringLiteral("3 / 3"));
 }
 
 void BackendTests::frameStepFailuresHaveTheirOwnNotice() {

@@ -13,7 +13,6 @@
 #include <QTimer>
 #include <QVariantMap>
 
-#include <algorithm>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -406,11 +405,7 @@ void Backend::stepFrame(double t, int direction) {
                     emit guard->frameStepFailed(QStringLiteral("Could not read video frame times."));
                     return;
                 }
-                if (guard->m_videos[clip.source].frameTimes.isEmpty()) {
-                    guard->m_videos[clip.source].frameTimes = times;
-                    ++guard->m_frameTimesRevision;
-                    emit guard->frameTimesChanged();
-                }
+                guard->m_videos[clip.source].frameTimes = times;
                 const double sourceTime = atClipEnd ? clip.out : clip.in + t - clipStart;
                 // Match the player's millisecond resolution, including rounded
                 // timestamps at fractional frame rates.
@@ -441,60 +436,6 @@ void Backend::stepFrame(double t, int direction) {
                 emit guard->frameStepped(t, clipStart + target - clip.in);
             }, Qt::QueuedConnection);
     });
-}
-
-void Backend::loadFrameTimes(int thumbKey, const QString &path, double start) {
-    const QPointer<Backend> guard(this);
-    QThreadPool::globalInstance()->start([guard, thumbKey, path, start] {
-        const auto times = ffmpeg::frameTimes(path, start);
-        QMetaObject::invokeMethod(QCoreApplication::instance(), [guard, thumbKey, times] {
-            if (!guard || times.isEmpty())
-                return;
-            for (Video &video : guard->m_videos) {
-                if (video.thumbKey == thumbKey && video.frameTimes.isEmpty()) {
-                    video.frameTimes = times;
-                    ++guard->m_frameTimesRevision;
-                    emit guard->frameTimesChanged();
-                }
-            }
-        }, Qt::QueuedConnection);
-    });
-}
-
-QString Backend::frameCounter(double t) {
-    const edit::Clips clips = m_timeline.clips();
-    if (clips.isEmpty())
-        return {};
-    // Each clip opens on the frame shown at its in point, then counts the
-    // frames that start after it and before its out point.
-    constexpr double tolerance = 0.0005;
-    const auto startingIn = [](const QList<double> &times, double from, double to) {
-        return int(std::lower_bound(times.begin(), times.end(), to)
-                   - std::upper_bound(times.begin(), times.end(), from));
-    };
-    t = qBound(0.0, t, m_timeline.duration());
-    const int at = m_timeline.clipAt(t);
-    int total = 0, current = 0;
-    for (int i = 0; i < clips.size(); ++i) {
-        const edit::Clip &clip = clips.at(i);
-        const Video &video = m_videos.at(clip.source);
-        const QList<double> &times = video.frameTimes;
-        if (times.isEmpty()) {
-            // Read once, in the background; frameTimesChanged asks again.
-            if (!m_frameTimesLoading.contains(video.thumbKey)) {
-                m_frameTimesLoading.insert(video.thumbKey);
-                loadFrameTimes(video.thumbKey, video.info.path, video.info.start);
-            }
-            return {};
-        }
-        const int frames = 1 + startingIn(times, clip.in + tolerance, clip.out - tolerance);
-        if (i == at) {
-            const double sourceTime = clip.in + t - m_timeline.clipStart(i);
-            current = total + 1 + qMin(frames - 1, startingIn(times, clip.in + tolerance, sourceTime + tolerance));
-        }
-        total += frames;
-    }
-    return QStringLiteral("%1 / %2").arg(current).arg(total);
 }
 
 void Backend::saveFrame(double t) {
